@@ -1,0 +1,113 @@
+# GENERATED FILE. Use with Kubernetes 1.9+
+# TO UPDATE, modify files in install/kubernetes/templates and run install/updateVersion.sh
+apiVersion: v1
+kind: Service
+metadata:
+  name: istio-sidecar-injector
+  namespace: istio-system
+  labels:
+    istio: sidecar-injector
+spec:
+  ports:
+  - name: https-webhook # optional
+    port: 443
+  selector:
+    istio: sidecar-injector
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: istio-sidecar-injector-service-account
+  namespace: istio-system
+---
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: istio-sidecar-injector
+  namespace: istio-system
+  labels:
+    istio: sidecar-injector
+spec:
+  replicas: 1
+  template:
+    metadata:
+      name: istio-sidecar-injector
+      labels:
+        istio: sidecar-injector
+    spec:
+      serviceAccountName: istio-sidecar-injector-service-account
+      containers:
+        - name: webhook
+          image: docker.io/istio/sidecar_injector:0.7.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - --tlsCertFile=/etc/istio/certs/cert.pem
+            - --tlsKeyFile=/etc/istio/certs/key.pem
+            - --injectConfig=/etc/istio/inject/config
+            - --meshConfig=/etc/istio/config/mesh
+            - --healthCheckInterval=2s
+            - --healthCheckFile=/health
+          volumeMounts:
+          - name: config-volume
+            mountPath: /etc/istio/config
+            readOnly: true
+          - name: certs
+            mountPath: /etc/istio/certs
+            readOnly: true
+          - name: inject-config
+            mountPath: /etc/istio/inject
+            readOnly: true
+          livenessProbe:
+            exec:
+              command:
+                - /usr/local/bin/sidecar-injector
+                - probe
+                - --probe-path=/health
+                - --interval=2s
+            initialDelaySeconds: 4
+            periodSeconds: 4
+          readinessProbe:
+            exec:
+              command:
+                - /usr/local/bin/sidecar-injector
+                - probe
+                - --probe-path=/health
+                - --interval=2s
+            initialDelaySeconds: 4
+            periodSeconds: 4
+      volumes:
+      - name: config-volume
+        configMap:
+          name: istio
+      - name: certs
+        secret:
+          secretName: sidecar-injector-certs
+      - name: inject-config
+        configMap:
+          name: istio-inject
+          items:
+          - key: config
+            path: config
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: istio-sidecar-injector
+webhooks:
+  - name: sidecar-injector.istio.io
+    clientConfig:
+      service:
+        name: istio-sidecar-injector
+        namespace: istio-system
+        path: "/inject"
+      caBundle: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURDekNDQWZPZ0F3SUJBZ0lRSmdjaDhxanpzOXh3SkJpOWVXOEVnVEFOQmdrcWhraUc5dzBCQVFzRkFEQXYKTVMwd0t3WURWUVFERXlRek5EQTJNbUkyWmkwM05tUTJMVFJpTkdNdE9EQTNPUzFsWW1VMU9EVTVORE5tTVRRdwpIaGNOTVRnd05URTNNVEEwTWpJeFdoY05Nak13TlRFMk1URTBNakl4V2pBdk1TMHdLd1lEVlFRREV5UXpOREEyCk1tSTJaaTAzTm1RMkxUUmlOR010T0RBM09TMWxZbVUxT0RVNU5ETm1NVFF3Z2dFaU1BMEdDU3FHU0liM0RRRUIKQVFVQUE0SUJEd0F3Z2dFS0FvSUJBUUNNT1JFYmVDVlBJQjB6cDFPRndubENxUng5T3hjaEhMR2pWeVUybmE1cAo0Rjl4MEFWUk40RGlIT0g1ZndaYWM5UmlnQ04yU2tFWHYvc3pEODdJek1uM1RBSmdSRmpVUERaeEh3T3B4ZUU2Ck9GOE5BODVWSTZCN1hKb0drdFNYcUN1YVRwNGcyRjBKRmN2NERrSlQ3M0grWXZXam1WSEZYUDlWc05YbW1kTDQKcnNhUmVLenQwVXowTUhpU01aaVZXZUNvOUtObTEzR3JNQWJhcERXZVJac081LzVYbXRiR3dNN1hvWk5vTFREagppbWdWU2dYcmJXSWhKZ09JM01yK0xPdGkvVGE5SzloSlpBZE94TXlEYmNhcERBT2lYUDNnTFpOOXRqbkVmMG9TCkRGdmF5VE5lU1ZuNE5PVmRqWFJNd05tc092elZoOEtwRTVqODM1SlJneFJoQWdNQkFBR2pJekFoTUE0R0ExVWQKRHdFQi93UUVBd0lDQkRBUEJnTlZIUk1CQWY4RUJUQURBUUgvTUEwR0NTcUdTSWIzRFFFQkN3VUFBNElCQVFBYwp2VlV6MFRKT0pKV28wNHd0Z2ZZMzFYeFM2Q0wrRkRxeHdFaXE0Wk1qeUVDUldYVFhvczNIbzlOeW9yOTdiWlFhCjgweEVqMnBTdU4yclpmTU1rSEt4NE4ySlJTSlZtZVhoNXFtM3d2RWhBRE5vTXBleW40dTl1aTJxbGZmZktTakgKSWRSY0tXV04wZ2dyZXAwL1lOck5aemtrV0pKRjBkOFhjcnUyWURhb2E2STA0a2R5dytIVGhGTWx1eU5IZjQ4Mwo4YXQ5eExxMWlURTduYmE2bUFkd2xZTzd1QzhmSzZnVUhxajBOV1ZiZnNYVmpqV2xVVHBvalVUdjQreVBVS29JCmRPVCtLOWphNXg0bnpyYXk0c0xleUxKSGNyUWN5djBFRy9HOVFOUFZIenFkTkNRdURTdTlmVTFJUkE0d2xtRmUKMldiTGhTZElndjhoSDB3ZlUvWmMKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
+    rules:
+      - operations: [ "CREATE" ]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+    failurePolicy: Fail
+    namespaceSelector:
+      matchLabels:
+        istio-injection: enabled
+---
